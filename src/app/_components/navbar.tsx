@@ -41,7 +41,7 @@ export function NavBar() {
         </Link>
       </div>
       <div className="flex flex-row items-center gap-x-4">
-        <Link href={"https://github.com/JohnZolton"}>
+        <Link href={"https://github.com/JohnZolton/snorkle"}>
           <svg
             role="img"
             viewBox="0 0 24 24"

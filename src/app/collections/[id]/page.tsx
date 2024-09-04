@@ -262,7 +262,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                   {searchRefs.length === 0 && (
                     <div>Select at least one reference</div>
                   )}
-                  {query.length === 0 && <div>Enter an inventive feature</div>}
+                  {query.length === 0 && <div>Enter a search query</div>}
                 </HoverCardContent>
               </HoverCard>
             ) : (

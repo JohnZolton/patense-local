@@ -6,7 +6,7 @@ import { type Metadata } from "next";
 import { TRPCReactProvider } from "~/trpc/react";
 
 export const metadata: Metadata = {
-  title: "Snorkle",
+  title: "Patense.local",
   description: "100% Local AI Document Search",
   icons: [{ rel: "icon", url: "/favicon.ico" }],
 };
