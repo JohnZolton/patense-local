@@ -14,6 +14,7 @@ model Job {
     
     references Reference[] 
     features Feature[]
+    inventiveFeatures InventiveFeature[]
 
     @@index([id])
 }
@@ -36,6 +37,16 @@ model Page {
 
 }
 
+model InventiveFeature {
+    id Int @id @default(autoincrement())
+    
+    jobId Int
+    job Job @relation(fields: [jobId],references: [id], onDelete: Cascade)
+    
+    feature String
+    context String
+
+}
 model Feature {
     id Int @id @default(autoincrement())
     

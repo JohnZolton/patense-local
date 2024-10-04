@@ -41,8 +41,126 @@ export const jobRouter = createTRPCRouter({
           features: {
             include: { analysis: true },
           },
+          inventiveFeatures: true,
         },
       });
+    }),
+
+  extractAllFeatures: publicProcedure
+    .input(
+      z.object({
+        jobId: z.string(),
+        references: z.array(
+          z.object({
+            id: z.number(),
+            title: z.string(),
+            pages: z.array(
+              z.object({
+                id: z.number(),
+                refId: z.number(),
+                pageNum: z.number(),
+                content: z.string(),
+              }),
+            ),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
+      async function getCompletion(message: string) {
+        const response = await fetch(webUiEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "user",
+                content: message,
+              },
+            ],
+          }),
+        });
+        interface ApiResponse {
+          choices: Array<{
+            message: {
+              content: string;
+            };
+          }>;
+        }
+        const content = (await response.json()) as ApiResponse;
+        console.log(content);
+        if (content && content.choices.length > 0) {
+          return content.choices[0]!.message.content;
+        }
+        return "zzz";
+      }
+
+      interface Page {
+        id: number;
+        refId: number;
+        pageNum: number;
+        content: string;
+      }
+      function splitIntoParagraphs(page: Page) {
+        return page.content
+          .split(/\n\s*\n/)
+          .filter((para) => para.trim() !== "");
+      }
+
+      for (const ref of input.references) {
+        for (const page of ref.pages) {
+          const paragraphs = splitIntoParagraphs(page);
+          for (const paragraph of paragraphs) {
+            console.log(paragraph);
+            const message = `You are an expert patent analyst. 
+            INSTRUCTIONS: identify every inventive feature in the disclosure, return each feature in <feature></feature> tags.
+            ----------------------------------
+          DISCLOSURE: ${paragraph}
+          -------------------------------------
+            extract every inventive feature from the above disclosure. return features in fragments suitable for dependent claims.
+          `;
+            const pageAnalysis = await getCompletion(message);
+            const featureRegex = /<feature>(.*?)<\/feature>/gs;
+            const features = pageAnalysis.match(featureRegex);
+            const results = [];
+            console.log(features);
+
+            if (features) {
+              for (const feature of features) {
+                const cleanFeature = feature
+                  .replace(/<\/?feature>/g, "")
+                  .trim();
+                console.log(cleanFeature);
+                const extractedFeatures = await ctx.db.inventiveFeature.create({
+                  data: {
+                    jobId: parseInt(input.jobId, 10),
+                    feature: cleanFeature,
+                    context: page.content,
+                  },
+                });
+                results.push(extractedFeatures);
+              }
+            }
+          }
+        }
+        return ctx.db.job.findFirst({
+          where: { id: parseInt(input.jobId, 10) },
+          include: {
+            references: {
+              include: {
+                pages: true,
+              },
+            },
+            features: {
+              include: { analysis: true },
+            },
+            inventiveFeatures: true,
+          },
+        });
+      }
     }),
 
   deepSearch: publicProcedure

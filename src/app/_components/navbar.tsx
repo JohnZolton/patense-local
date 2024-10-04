@@ -27,7 +27,7 @@ export function NavBar() {
   return (
     <div className="mx-auto flex w-full flex-row items-center justify-between gap-x-10 px-10 py-4">
       <Link href={"/"} className="text-2xl font-semibold">
-        Snorkle
+        Patense.local
       </Link>
       <div className="max-w-1/2 flex flex-row">
         <Link href={"/new"} className={buttonVariants({ variant: "link" })}>

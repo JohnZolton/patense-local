@@ -14,6 +14,7 @@ import { Button } from "~/components/ui/button";
 import { pdfjs } from "react-pdf";
 import { LoadingSpinner } from "../_components/loader";
 //import "pdfjs-dist/webpack";
+import mammoth from "mammoth";
 
 interface Reference {
   title: string;
@@ -53,14 +54,28 @@ export default function Page() {
     return pages;
   }
 
+  async function extractTextFromDOCX(file: File) {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const text = result.value;
+    return [{ content: text, pageNum: 1 }];
+  }
+
   useEffect(() => {
     async function processFiles() {
       try {
         const refs = await Promise.all(
           files.map(async (file) => {
-            const pdf = await pdfjs.getDocument(await file.arrayBuffer())
-              .promise;
-            const pages = await extractText(pdf as unknown as PDFDocumentProxy);
+            let pages;
+            if (file.name.endsWith(".pdf")) {
+              const pdf = await pdfjs.getDocument(await file.arrayBuffer())
+                .promise;
+              pages = await extractText(pdf as unknown as PDFDocumentProxy);
+            } else if (file.name.endsWith(".docx")) {
+              pages = await extractTextFromDOCX(file);
+            } else {
+              throw new Error("unsupported file type");
+            }
             return {
               title: file.name,
               pages: pages,
@@ -100,9 +115,14 @@ export default function Page() {
           NEW COLLECTION
         </h1>
         <h1 className="text-2xl tracking-tight">Upload All Documents</h1>
-        <h1 className="tracking-tight">As PDFs with recognized text</h1>
+        <h1 className="tracking-tight">As PDF/docx with recognized text</h1>
         <Dropzone
           multiple={true}
+          accept={{
+            "application/pdf": [".pdf"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+              [".docx"],
+          }}
           onDrop={(acceptedFiles) => {
             if (acceptedFiles.length > 0 && acceptedFiles[0] !== undefined) {
               onDrop(acceptedFiles);

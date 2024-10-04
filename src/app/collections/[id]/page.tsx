@@ -1,7 +1,13 @@
 "use client";
 import { Input } from "~/components/ui/input";
 import { api } from "~/trpc/react";
-import { Reference, Page, Feature, Analysis } from "@prisma/client";
+import {
+  Reference,
+  Page,
+  Feature,
+  Analysis,
+  InventiveFeature,
+} from "@prisma/client";
 import { useEffect, useState } from "react";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Button } from "~/components/ui/button";
@@ -98,6 +104,42 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
   const { mutate: deleteJob } = api.job.deleteJob.useMutation({
     onSuccess: () => router.push("/dashboard"),
   });
+  const { mutate: extractAllFeatures } = api.job.extractAllFeatures.useMutation(
+    {
+      onSuccess: (result) => {
+        setIsLoading(false);
+        setDisplay(DisplayOptions.inventiveFeatures);
+        setAllInventiveFeatures(result?.inventiveFeatures);
+      },
+    },
+  );
+
+  const [allInventiveFeatures, setAllInventiveFeatures] = useState<
+    InventiveFeature[] | undefined
+  >([]);
+
+  useEffect(() => {
+    if (job?.inventiveFeatures) {
+      setAllInventiveFeatures(job.inventiveFeatures);
+    }
+  }, [job]);
+
+  enum DisplayOptions {
+    features,
+    inventiveFeatures,
+  }
+  const [display, setDisplay] = useState<DisplayOptions>(
+    DisplayOptions.features,
+  );
+  function handleExtractFeatures() {
+    if (searchRefs.length > 0) {
+      setIsLoading(true);
+      extractAllFeatures({
+        jobId: params.id,
+        references: searchRefs,
+      });
+    }
+  }
 
   return (
     <div className="flex h-[calc(100vh-96px)] w-full flex-row justify-start">
@@ -116,7 +158,10 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                     <Button
                       variant={"ghost"}
                       className="max-w-full"
-                      onClick={() => setFeature(job.features[index])}
+                      onClick={() => {
+                        setFeature(job.features[index]);
+                        setDisplay(DisplayOptions.features);
+                      }}
                     >
                       <span className="truncate">{item.feature}</span>
                     </Button>
@@ -127,7 +172,24 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-center">
+        <div className="flex flex-col items-center justify-center gap-y-4">
+          <Button
+            disabled={job?.inventiveFeatures.length === 0}
+            onClick={() => setDisplay(DisplayOptions.inventiveFeatures)}
+            variant={"secondary"}
+          >
+            Show All Features
+          </Button>
+          <Button
+            disabled={searchRefs.length === 0}
+            variant={"secondary"}
+            onClick={() => {
+              setDisplay(DisplayOptions.inventiveFeatures);
+              handleExtractFeatures();
+            }}
+          >
+            Extract All Features
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger>
               <Button variant={"destructive"}>Delete Collection</Button>
@@ -165,43 +227,76 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
           <div className="flex h-5/6 flex-col items-center">
             <div className="text-2xl font-bold">{feature?.feature}</div>
             <ScrollArea className="w-full rounded-md p-4">
-              {feature?.analysis.map((item, index) => (
-                <div
-                  key={`analysis-display-${index}`}
-                  className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
-                >
-                  <div className="flex flex-col items-start justify-start gap-y-2">
-                    <div>{item.quote}</div>
-                    <div className="text-xs">
-                      {item.refTitle} - page {item.refPage}
+              {display === DisplayOptions.inventiveFeatures &&
+                allInventiveFeatures?.map((item, index) => (
+                  <div
+                    key={`analysis-display-${index}`}
+                    className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
+                  >
+                    <div className="flex flex-col items-start justify-start gap-y-2">
+                      <div>{item.feature}</div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <Dialog>
+                        <DialogTrigger>
+                          <HoverCard>
+                            <HoverCardTrigger>
+                              <FileText />
+                            </HoverCardTrigger>
+                            <HoverCardContent>Show Context</HoverCardContent>
+                          </HoverCard>
+                        </DialogTrigger>
+                        <DialogContent className="max-h-[425px]">
+                          <DialogHeader>
+                            <DialogDescription>
+                              <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
+                                {item.context}
+                              </ScrollArea>
+                            </DialogDescription>
+                          </DialogHeader>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   </div>
-                  <div className="flex items-center justify-end">
-                    <Dialog>
-                      <DialogTrigger>
-                        <HoverCard>
-                          <HoverCardTrigger>
-                            <FileText />
-                          </HoverCardTrigger>
-                          <HoverCardContent>Show Context</HoverCardContent>
-                        </HoverCard>
-                      </DialogTrigger>
-                      <DialogContent className="max-h-[425px]">
-                        <DialogHeader>
-                          <DialogTitle>
-                            {item.refTitle} - page {item.refPage}
-                          </DialogTitle>
-                          <DialogDescription>
-                            <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
-                              {item.refContent}
-                            </ScrollArea>
-                          </DialogDescription>
-                        </DialogHeader>
-                      </DialogContent>
-                    </Dialog>
+                ))}
+              {display === DisplayOptions.features &&
+                feature?.analysis.map((item, index) => (
+                  <div
+                    key={`analysis-display-${index}`}
+                    className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
+                  >
+                    <div className="flex flex-col items-start justify-start gap-y-2">
+                      <div>{item.quote}</div>
+                      <div className="text-xs">
+                        {item.refTitle} - page {item.refPage}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end">
+                      <Dialog>
+                        <DialogTrigger>
+                          <HoverCard>
+                            <HoverCardTrigger>
+                              <FileText />
+                            </HoverCardTrigger>
+                            <HoverCardContent>Show Context</HoverCardContent>
+                          </HoverCard>
+                        </DialogTrigger>
+                        <DialogContent className="max-h-[425px]">
+                          <DialogHeader>
+                            <DialogTitle>
+                              {item.refTitle} - page {item.refPage}
+                            </DialogTitle>
+                            <DialogDescription>
+                              <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
+                                {item.refContent}
+                              </ScrollArea>
+                            </DialogDescription>
+                          </DialogHeader>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </ScrollArea>
           </div>
         )}
