@@ -3,8 +3,9 @@ import { z } from "zod";
 import EventEmitter from "events";
 import { observable } from "@trpc/server/observable";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
-import { InventiveFeature, PrismaClient } from "@prisma/client";
+import { Feature, InventiveFeature, PrismaClient } from "@prisma/client";
 import { extendTailwindMerge } from "tailwind-merge";
+import { createInputMiddleware } from "@trpc/server/unstable-core-do-not-import";
 
 const extractionEmitter = new EventEmitter();
 const extractionUpdateSchema = z.object({
@@ -131,7 +132,23 @@ export const jobRouter = createTRPCRouter({
       });
     }),
 
-  deepSearch: publicProcedure
+  pollDeepSearch: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.feature.findFirst({
+        where: {
+          id: input.featureId,
+        },
+        include: {
+          analysis: true,
+        },
+      });
+    }),
+  makeDeepSearch: publicProcedure
     .input(
       z.object({
         jobId: z.string(),
@@ -153,97 +170,19 @@ export const jobRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      console.log(input.feature);
-      const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
-      async function getCompletion(message: string) {
-        const response = await fetch(webUiEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: [
-              {
-                role: "user",
-                content: message,
-              },
-            ],
-          }),
-        });
-        interface ApiResponse {
-          choices: Array<{
-            message: {
-              content: string;
-            };
-          }>;
-        }
-        const content = (await response.json()) as ApiResponse;
-        console.log(content);
-        if (content && content.choices.length > 0) {
-          return content.choices[0]!.message.content;
-        }
-        return "zzz";
-      }
-
       const feature = await ctx.db.feature.create({
         data: {
           feature: input.feature,
-          jobId: parseInt(input.jobId, 10),
+          jobId: parseInt(input.jobId),
         },
       });
-
-      const results = [];
-      for (const ref of input.references) {
-        for (const page of ref.pages) {
-          const message = `You are a document analyst. Analyze whether the following text is relevant to a given user query. Be conservative, if something is borderline, answer yes. you are flagging text for manual review.
-            INSTRUCTIONS: return an answer, yes or no, in <answer></answer> tags.
-            If the answer is yes, also include a short quote in <quote></quote> tags
-            -------------------
-          TEXT: ${page.content}
-          -------------------------------------
-          QUERY: ${input.feature}
-          -------------------------------------
-          Is the above text relevant to the query? 
-          `;
-          const pageAnalysis = await getCompletion(message);
-          let answer = "";
-          const answerRegex = /<answer>(.*?)<\/answer>/s;
-          const answerMatch = answerRegex.exec(pageAnalysis);
-          answer = answerMatch?.[1]?.trim() ?? "";
-          let quote = "";
-          const quoteRegex = /<quote>(.*?)<\/quote>/s;
-          const quoteMatch = quoteRegex.exec(pageAnalysis);
-          quote = quoteMatch?.[1]?.trim() ?? "";
-
-          if (answer.toLowerCase() === "yes") {
-            const loggedAnalysis = await ctx.db.analysis.create({
-              data: {
-                featureId: feature.id,
-                conclusion: answer,
-                quote: quote,
-                refPage: page.pageNum,
-                refContent: page.content,
-                refId: ref.id,
-                refTitle: ref.title,
-              },
-            });
-            results.push(loggedAnalysis);
-          }
-        }
-        return ctx.db.job.findFirst({
-          where: { id: parseInt(input.jobId, 10) },
-          include: {
-            references: {
-              include: {
-                pages: true,
-              },
-            },
-            features: {
-              include: { analysis: true },
-            },
-          },
-        });
-      }
+      void runDeepSearch(
+        feature,
+        parseInt(input.jobId, 10),
+        ctx.db,
+        input.references,
+      );
+      return feature;
     }),
 
   createJob: publicProcedure
@@ -379,4 +318,88 @@ async function extractFeatures(
       },
     });
   }
+}
+
+async function runDeepSearch(
+  inputFeature: Feature,
+  jobId: number,
+  prisma: PrismaClient,
+  references: (Reference & { pages: Page[] })[],
+) {
+  const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
+  async function getCompletion(message: string) {
+    const response = await fetch(webUiEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      }),
+    });
+    interface ApiResponse {
+      choices: Array<{
+        message: {
+          content: string;
+        };
+      }>;
+    }
+    const content = (await response.json()) as ApiResponse;
+    console.log(content);
+    if (content && content.choices.length > 0) {
+      return content.choices[0]!.message.content;
+    }
+    return "zzz";
+  }
+
+  const results = [];
+  for (const ref of references) {
+    for (const page of ref.pages) {
+      const message = `You are a document analyst. Analyze whether the following text is relevant to a given user query. Be conservative, if something is borderline, answer yes. you are flagging text for manual review.
+            INSTRUCTIONS: return an answer, yes or no, in <answer></answer> tags.
+            If the answer is yes, also include a short quote in <quote></quote> tags
+            -------------------
+          TEXT: ${page.content}
+          -------------------------------------
+          QUERY: ${inputFeature.feature}
+          -------------------------------------
+          Is the above text relevant to the query? 
+          `;
+      const pageAnalysis = await getCompletion(message);
+      let answer = "";
+      const answerRegex = /<answer>(.*?)<\/answer>/s;
+      const answerMatch = answerRegex.exec(pageAnalysis);
+      answer = answerMatch?.[1]?.trim() ?? "";
+      let quote = "";
+      const quoteRegex = /<quote>(.*?)<\/quote>/s;
+      const quoteMatch = quoteRegex.exec(pageAnalysis);
+      quote = quoteMatch?.[1]?.trim() ?? "";
+
+      if (answer.toLowerCase() === "yes") {
+        const loggedAnalysis = await prisma.analysis.create({
+          data: {
+            featureId: inputFeature.id,
+            conclusion: answer,
+            quote: quote,
+            refPage: page.pageNum,
+            refContent: page.content,
+            refId: ref.id,
+            refTitle: ref.title,
+          },
+        });
+        results.push(loggedAnalysis);
+      }
+    }
+  }
+  await prisma.feature.update({
+    where: { id: inputFeature.id },
+    data: {
+      completed: true,
+    },
+  });
 }

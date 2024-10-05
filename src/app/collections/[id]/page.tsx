@@ -69,28 +69,22 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
     }
   }
 
-  const { mutate: analyze } = api.job.deepSearch.useMutation({
+  const { mutate: analyze } = api.job.makeDeepSearch.useMutation({
     onSuccess: async (result) => {
-      setIsLoading(false);
-
-      if (result && result.features && result.features.length > 0) {
-        const latestFeature = result.features[result.features.length - 1];
-        setFeature(latestFeature);
-      }
-
-      await queryClient.invalidateQueries();
-      await refetch();
+      setSearchLoading(true);
+      setFeature({ ...result, analysis: [] });
     },
-    onError: (error) => setIsLoading(false),
+    onError: (error) => setSearchLoading(false),
   });
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSearchLoading, setSearchLoading] = useState(false);
+  const [isExtractionLoading, setExtractionLoading] = useState(false);
 
   const [query, setQuery] = useState("");
 
   function handleAnalyzeFeature() {
     if (searchRefs.length > 0 && query.length > 0) {
-      setIsLoading(true);
+      setSearchLoading(true);
       analyze({
         jobId: params.id,
         feature: query,
@@ -110,7 +104,9 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
     InventiveFeature[]
   >([]);
 
-  const { mutate: extractAllFeatures } = api.job.startExtraction.useMutation();
+  const { mutate: extractAllFeatures } = api.job.startExtraction.useMutation({
+    onSuccess: () => setExtractionLoading(true),
+  });
 
   useEffect(() => {
     if (
@@ -118,9 +114,12 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
       job.inventiveFeatureJobs.length > 0 &&
       job.inventiveFeatureJobs[0]?.inventiveFeatures
     ) {
-      setAllInventiveFeatures(job.inventiveFeatureJobs[0]?.inventiveFeatures);
+      const allFeatures = job.inventiveFeatureJobs.flatMap(
+        (job) => job?.inventiveFeatures || [],
+      );
+      setAllInventiveFeatures(allFeatures);
       if (job.inventiveFeatureJobs[0].completed) {
-        setIsLoading(false);
+        setSearchLoading(false);
       }
     }
   }, [job, params.id, extractAllFeatures]);
@@ -134,7 +133,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
   );
   function handleExtractFeatures() {
     if (searchRefs.length > 0) {
-      setIsLoading(true);
+      setSearchLoading(true);
       setDisplay(DisplayOptions.inventiveFeatures);
       extractAllFeatures({
         jobId: params.id,
@@ -154,10 +153,30 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
       .catch((err) => console.error(err));
   }
 
+  const { mutate: pollDeepSearch } = api.job.pollDeepSearch.useMutation({
+    onSuccess: (res) => {
+      if (res) {
+        setFeature(res);
+        if (res.completed) {
+          setSearchLoading(false);
+        }
+      }
+    },
+  });
   // Polling logic
   useEffect(() => {
     const interval = setInterval(() => {
-      if (isLoading) {
+      if (isSearchLoading && feature) {
+        pollDeepSearch({ featureId: feature.id });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval); // Cleanup interval on unmount
+  }, [isSearchLoading, feature]);
+  // Polling logic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isSearchLoading || isExtractionLoading) {
         void refetch();
         if (
           job?.inventiveFeatureJobs &&
@@ -168,16 +187,16 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
             job.inventiveFeatureJobs[0]?.inventiveFeatures,
           );
           if (job.inventiveFeatureJobs[0].completed) {
-            setIsLoading(false);
+            setExtractionLoading(false);
           }
         }
       }
     }, 1000);
 
     return () => clearInterval(interval); // Cleanup interval on unmount
-  }, [params.id, job, handleExtractFeatures]);
+  }, [isExtractionLoading]);
 
-  const [parent, enableAnimations] = useAutoAnimate();
+  const [parent] = useAutoAnimate();
 
   return (
     <div className="flex h-[calc(100vh-96px)] w-full flex-row justify-start">
@@ -244,7 +263,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                 <AlertDialogAction
                   onClick={() => {
                     if (job) {
-                      setIsLoading(true);
+                      setSearchLoading(true);
                       deleteJob({ jobId: job.id });
                     }
                   }}
@@ -291,48 +310,51 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                   ))}
                 </div>
               )}
-              {display === DisplayOptions.features &&
-                feature?.analysis.map((item, index) => (
-                  <div
-                    key={`analysis-display-${index}`}
-                    className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
-                  >
-                    <div className="flex flex-col items-start justify-start gap-y-2">
-                      <div>{item.quote}</div>
-                      <div className="text-xs">
-                        {item.refTitle} - page {item.refPage}
+              {display === DisplayOptions.features && (
+                <div ref={parent}>
+                  {feature?.analysis.map((item, index) => (
+                    <div
+                      key={`analysis-display-${index}`}
+                      className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
+                    >
+                      <div className="flex flex-col items-start justify-start gap-y-2">
+                        <div>{item.quote}</div>
+                        <div className="text-xs">
+                          {item.refTitle} - page {item.refPage}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end">
+                        <Dialog>
+                          <DialogTrigger>
+                            <HoverCard>
+                              <HoverCardTrigger>
+                                <FileText />
+                              </HoverCardTrigger>
+                              <HoverCardContent>Show Context</HoverCardContent>
+                            </HoverCard>
+                          </DialogTrigger>
+                          <DialogContent className="max-h-[425px]">
+                            <DialogHeader>
+                              <DialogTitle>
+                                {item.refTitle} - page {item.refPage}
+                              </DialogTitle>
+                              <DialogDescription>
+                                <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
+                                  {item.refContent}
+                                </ScrollArea>
+                              </DialogDescription>
+                            </DialogHeader>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                     </div>
-                    <div className="flex items-center justify-end">
-                      <Dialog>
-                        <DialogTrigger>
-                          <HoverCard>
-                            <HoverCardTrigger>
-                              <FileText />
-                            </HoverCardTrigger>
-                            <HoverCardContent>Show Context</HoverCardContent>
-                          </HoverCard>
-                        </DialogTrigger>
-                        <DialogContent className="max-h-[425px]">
-                          <DialogHeader>
-                            <DialogTitle>
-                              {item.refTitle} - page {item.refPage}
-                            </DialogTitle>
-                            <DialogDescription>
-                              <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
-                                {item.refContent}
-                              </ScrollArea>
-                            </DialogDescription>
-                          </DialogHeader>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+              {(isSearchLoading || isExtractionLoading) && <LoadingSpinner />}
             </ScrollArea>
           </div>
         }
-        {isLoading && <LoadingSpinner />}
         <div className="flex h-1/6 w-full flex-col items-center justify-end">
           {/* Reference toggle */}
           <ScrollArea>
