@@ -6,7 +6,7 @@ import { LoadingSpinner } from "../_components/loader";
 import { Suspense } from "react";
 
 export default function Dashboard() {
-  const [allJobs] = api.job.getAllJobs.useSuspenseQuery();
+  const { data: allJobs, isLoading } = api.job.getAllJobs.useQuery();
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-start">
@@ -14,14 +14,14 @@ export default function Dashboard() {
         <h1 className="pb-4 text-4xl font-extrabold tracking-tight">
           All Analyses
         </h1>
-        <Suspense
-          fallback={
-            <div className="my-8">
-              <LoadingSpinner />
-            </div>
-          }
-        >
-          {allJobs.map((job, index) => (
+        {isLoading && (
+          <div className="my-8">
+            <LoadingSpinner />
+          </div>
+        )}
+
+        {allJobs &&
+          allJobs.map((job, index) => (
             <div key={index}>
               <Link
                 className={buttonVariants({ variant: "ghost" })}
@@ -31,7 +31,6 @@ export default function Dashboard() {
               </Link>
             </div>
           ))}
-        </Suspense>
       </div>
     </main>
   );
