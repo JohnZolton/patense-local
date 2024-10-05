@@ -26,10 +26,12 @@ export function NavBar() {
 
   return (
     <div className="mx-auto flex w-full flex-row items-center justify-between gap-x-10 px-10 py-4">
-      <Link href={"/"} className="text-2xl font-semibold">
-        Patense.local
-      </Link>
-      <div className="max-w-1/2 flex flex-row">
+      <div className="flex-1">
+        <Link href={"/"} className="text-2xl font-semibold">
+          Patense.local
+        </Link>
+      </div>
+      <div className="flex flex-1 justify-center space-x-4">
         <Link href={"/new"} className={buttonVariants({ variant: "link" })}>
           New Collection
         </Link>
@@ -40,7 +42,7 @@ export function NavBar() {
           All Collections
         </Link>
       </div>
-      <div className="flex flex-row items-center gap-x-4">
+      <div className="flex flex-1 items-center justify-end space-x-4">
         <Link href={"https://github.com/JohnZolton/snorkle"}>
           <svg
             role="img"
