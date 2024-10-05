@@ -1,7 +1,39 @@
 import { log } from "console";
 import { z } from "zod";
-
+import EventEmitter from "events";
+import { observable } from "@trpc/server/observable";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
+import { InventiveFeature, PrismaClient } from "@prisma/client";
+import { extendTailwindMerge } from "tailwind-merge";
+
+const extractionEmitter = new EventEmitter();
+const extractionUpdateSchema = z.object({
+  id: z.number(),
+  jobId: z.number(),
+  feature: z.string(),
+  context: z.string(),
+  completed: z.boolean(),
+  createdAt: z.date(),
+});
+
+type ExtractionUpdate = z.infer<typeof extractionUpdateSchema>;
+
+interface Page {
+  id: number;
+  refId: number;
+  pageNum: number;
+  content: string;
+}
+
+interface Reference {
+  id: number;
+  title: string;
+  pages: Page[];
+}
+
+interface References {
+  references: Reference[];
+}
 
 export const jobRouter = createTRPCRouter({
   getAllJobs: publicProcedure.query(({ ctx }) => {
@@ -41,12 +73,16 @@ export const jobRouter = createTRPCRouter({
           features: {
             include: { analysis: true },
           },
-          inventiveFeatures: true,
+          inventiveFeatureJobs: {
+            include: {
+              inventiveFeatures: true,
+            },
+          },
         },
       });
     }),
 
-  extractAllFeatures: publicProcedure
+  startExtraction: publicProcedure
     .input(
       z.object({
         jobId: z.string(),
@@ -67,100 +103,32 @@ export const jobRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
-      async function getCompletion(message: string) {
-        const response = await fetch(webUiEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: [
-              {
-                role: "user",
-                content: message,
-              },
-            ],
-          }),
-        });
-        interface ApiResponse {
-          choices: Array<{
-            message: {
-              content: string;
-            };
-          }>;
-        }
-        const content = (await response.json()) as ApiResponse;
-        console.log(content);
-        if (content && content.choices.length > 0) {
-          return content.choices[0]!.message.content;
-        }
-        return "zzz";
-      }
+      const jobId = parseInt(input.jobId, 10);
+      const job = await ctx.db.inventiveFeatureJob.create({
+        data: { jobId, completed: false },
+      });
 
-      interface Page {
-        id: number;
-        refId: number;
-        pageNum: number;
-        content: string;
-      }
-      function splitIntoParagraphs(page: Page) {
-        return page.content
-          .split(/\n\s*\n/)
-          .filter((para) => para.trim() !== "");
-      }
+      // Start the extraction process asynchronously
+      void extractFeatures(job.id, ctx.db, input.references);
 
-      for (const ref of input.references) {
-        for (const page of ref.pages) {
-          const paragraphs = splitIntoParagraphs(page);
-          for (const paragraph of paragraphs) {
-            console.log(paragraph);
-            const message = `You are an expert patent analyst. 
-            INSTRUCTIONS: identify every inventive feature in the disclosure, return each feature in <feature></feature> tags.
-            ----------------------------------
-          DISCLOSURE: ${paragraph}
-          -------------------------------------
-            extract every inventive feature from the above disclosure. return features in fragments suitable for dependent claims.
-          `;
-            const pageAnalysis = await getCompletion(message);
-            const featureRegex = /<feature>(.*?)<\/feature>/gs;
-            const features = pageAnalysis.match(featureRegex);
-            const results = [];
-            console.log(features);
+      return { jobId: job.id };
+    }),
 
-            if (features) {
-              for (const feature of features) {
-                const cleanFeature = feature
-                  .replace(/<\/?feature>/g, "")
-                  .trim();
-                console.log(cleanFeature);
-                const extractedFeatures = await ctx.db.inventiveFeature.create({
-                  data: {
-                    jobId: parseInt(input.jobId, 10),
-                    feature: cleanFeature,
-                    context: page.content,
-                  },
-                });
-                results.push(extractedFeatures);
-              }
-            }
-          }
-        }
-        return ctx.db.job.findFirst({
-          where: { id: parseInt(input.jobId, 10) },
-          include: {
-            references: {
-              include: {
-                pages: true,
-              },
-            },
-            features: {
-              include: { analysis: true },
-            },
-            inventiveFeatures: true,
-          },
-        });
-      }
+  getExtractionUpdates: publicProcedure
+    .input(
+      z.object({
+        jobId: z.number(),
+      }),
+    )
+    .query(({ ctx, input }) => {
+      return ctx.db.inventiveFeatureJob.findFirst({
+        where: {
+          jobId: input.jobId,
+        },
+        include: {
+          inventiveFeatures: true,
+        },
+      });
     }),
 
   deepSearch: publicProcedure
@@ -319,3 +287,96 @@ export const jobRouter = createTRPCRouter({
       });
     }),
 });
+
+interface Page {
+  id: number;
+  refId: number;
+  pageNum: number;
+  content: string;
+}
+async function extractFeatures(
+  jobId: number,
+  prisma: PrismaClient,
+  references: (Reference & { pages: Page[] })[],
+) {
+  const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
+  async function getCompletion(message: string) {
+    const response = await fetch(webUiEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      }),
+    });
+    interface ApiResponse {
+      choices: Array<{
+        message: {
+          content: string;
+        };
+      }>;
+    }
+    const content = (await response.json()) as ApiResponse;
+    console.log(content);
+    if (content && content.choices.length > 0) {
+      return content.choices[0]!.message.content;
+    }
+    return "zzz";
+  }
+
+  interface Page {
+    id: number;
+    refId: number;
+    pageNum: number;
+    content: string;
+  }
+  function splitIntoParagraphs(page: Page) {
+    return page.content.split(/\n\s*\n/).filter((para) => para.trim() !== "");
+  }
+
+  for (const ref of references) {
+    for (const page of ref.pages) {
+      const paragraphs = splitIntoParagraphs(page);
+      for (const paragraph of paragraphs) {
+        console.log(paragraph);
+        const message = `You are an expert patent analyst. 
+            INSTRUCTIONS: identify every inventive feature in the disclosure, return each feature in <feature></feature> tags.
+            ----------------------------------
+          DISCLOSURE: ${paragraph}
+          -------------------------------------
+            extract every inventive feature from the above disclosure. return features in fragments suitable for dependent claims.
+          `;
+        const pageAnalysis = await getCompletion(message);
+        const featureRegex = /<feature>(.*?)<\/feature>/gs;
+        const features = pageAnalysis.match(featureRegex);
+        console.log(features);
+
+        if (features) {
+          for (const feature of features) {
+            const cleanFeature = feature.replace(/<\/?feature>/g, "").trim();
+            console.log(cleanFeature);
+            await prisma.inventiveFeature.create({
+              data: {
+                jobId: jobId,
+                feature: cleanFeature,
+                context: page.content,
+              },
+            });
+          }
+        }
+      }
+    }
+    await prisma.inventiveFeatureJob.update({
+      where: { id: jobId },
+      data: {
+        completed: true,
+      },
+    });
+  }
+}

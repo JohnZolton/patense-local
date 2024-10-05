@@ -1,4 +1,5 @@
 "use client";
+import { useAutoAnimate } from "@formkit/auto-animate/react";
 import { Input } from "~/components/ui/input";
 import { api } from "~/trpc/react";
 import {
@@ -13,7 +14,7 @@ import { Checkbox } from "~/components/ui/checkbox";
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
-import { Search } from "lucide-react";
+import { Clipboard, ClipboardCheck, Search } from "lucide-react";
 import { LoadingSpinner } from "~/app/_components/loader";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -104,25 +105,25 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
   const { mutate: deleteJob } = api.job.deleteJob.useMutation({
     onSuccess: () => router.push("/dashboard"),
   });
-  const { mutate: extractAllFeatures } = api.job.extractAllFeatures.useMutation(
-    {
-      onSuccess: (result) => {
-        setIsLoading(false);
-        setDisplay(DisplayOptions.inventiveFeatures);
-        setAllInventiveFeatures(result?.inventiveFeatures);
-      },
-    },
-  );
 
   const [allInventiveFeatures, setAllInventiveFeatures] = useState<
-    InventiveFeature[] | undefined
+    InventiveFeature[]
   >([]);
 
+  const { mutate: extractAllFeatures } = api.job.startExtraction.useMutation();
+
   useEffect(() => {
-    if (job?.inventiveFeatures) {
-      setAllInventiveFeatures(job.inventiveFeatures);
+    if (
+      job?.inventiveFeatureJobs &&
+      job.inventiveFeatureJobs.length > 0 &&
+      job.inventiveFeatureJobs[0]?.inventiveFeatures
+    ) {
+      setAllInventiveFeatures(job.inventiveFeatureJobs[0]?.inventiveFeatures);
+      if (job.inventiveFeatureJobs[0].completed) {
+        setIsLoading(false);
+      }
     }
-  }, [job]);
+  }, [job, params.id, extractAllFeatures]);
 
   enum DisplayOptions {
     features,
@@ -134,12 +135,49 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
   function handleExtractFeatures() {
     if (searchRefs.length > 0) {
       setIsLoading(true);
+      setDisplay(DisplayOptions.inventiveFeatures);
       extractAllFeatures({
         jobId: params.id,
         references: searchRefs,
       });
     }
   }
+
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  function handleCopy(text: string, index: number) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedIndex(index);
+        setTimeout(() => setCopiedIndex(null), 2000);
+      })
+      .catch((err) => console.error(err));
+  }
+
+  // Polling logic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isLoading) {
+        void refetch();
+        if (
+          job?.inventiveFeatureJobs &&
+          job.inventiveFeatureJobs.length > 0 &&
+          job.inventiveFeatureJobs[0]?.inventiveFeatures
+        ) {
+          setAllInventiveFeatures(
+            job.inventiveFeatureJobs[0]?.inventiveFeatures,
+          );
+          if (job.inventiveFeatureJobs[0].completed) {
+            setIsLoading(false);
+          }
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(interval); // Cleanup interval on unmount
+  }, [params.id, job, handleExtractFeatures]);
+
+  const [parent, enableAnimations] = useAutoAnimate();
 
   return (
     <div className="flex h-[calc(100vh-96px)] w-full flex-row justify-start">
@@ -174,7 +212,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
         </div>
         <div className="flex flex-col items-center justify-center gap-y-4">
           <Button
-            disabled={job?.inventiveFeatures.length === 0}
+            disabled={job?.inventiveFeatureJobs.length === 0}
             onClick={() => setDisplay(DisplayOptions.inventiveFeatures)}
             variant={"secondary"}
           >
@@ -184,7 +222,6 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
             disabled={searchRefs.length === 0}
             variant={"secondary"}
             onClick={() => {
-              setDisplay(DisplayOptions.inventiveFeatures);
               handleExtractFeatures();
             }}
           >
@@ -223,42 +260,37 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
       {/* Main Display */}
       <div className="mx-auto flex h-full w-full max-w-4xl flex-col items-center justify-between px-4">
         {/* Analysis Display */}
-        {!isLoading && (
+        {
           <div className="flex h-5/6 flex-col items-center">
             <div className="text-2xl font-bold">{feature?.feature}</div>
             <ScrollArea className="w-full rounded-md p-4">
-              {display === DisplayOptions.inventiveFeatures &&
-                allInventiveFeatures?.map((item, index) => (
-                  <div
-                    key={`analysis-display-${index}`}
-                    className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
-                  >
-                    <div className="flex flex-col items-start justify-start gap-y-2">
-                      <div>{item.feature}</div>
+              {display === DisplayOptions.inventiveFeatures && (
+                <div ref={parent}>
+                  {allInventiveFeatures?.map((item, index) => (
+                    <div
+                      key={`analysis-display-${index}`}
+                      className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
+                    >
+                      <div className="flex flex-col items-start justify-start gap-y-2">
+                        <div>{item.feature}</div>
+                      </div>
+                      <div className="flex items-center justify-end">
+                        <Button
+                          onClick={() => handleCopy(item.feature, index)}
+                          variant={"ghost"}
+                          size={"sm"}
+                        >
+                          {copiedIndex === index ? (
+                            <ClipboardCheck />
+                          ) : (
+                            <Clipboard />
+                          )}
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-end">
-                      <Dialog>
-                        <DialogTrigger>
-                          <HoverCard>
-                            <HoverCardTrigger>
-                              <FileText />
-                            </HoverCardTrigger>
-                            <HoverCardContent>Show Context</HoverCardContent>
-                          </HoverCard>
-                        </DialogTrigger>
-                        <DialogContent className="max-h-[425px]">
-                          <DialogHeader>
-                            <DialogDescription>
-                              <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
-                                {item.context}
-                              </ScrollArea>
-                            </DialogDescription>
-                          </DialogHeader>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
               {display === DisplayOptions.features &&
                 feature?.analysis.map((item, index) => (
                   <div
@@ -299,7 +331,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                 ))}
             </ScrollArea>
           </div>
-        )}
+        }
         {isLoading && <LoadingSpinner />}
         <div className="flex h-1/6 w-full flex-col items-center justify-end">
           {/* Reference toggle */}

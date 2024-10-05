@@ -14,7 +14,7 @@ model Job {
     
     references Reference[] 
     features Feature[]
-    inventiveFeatures InventiveFeature[]
+    inventiveFeatureJobs InventiveFeatureJob[]
 
     @@index([id])
 }
@@ -37,15 +37,25 @@ model Page {
 
 }
 
-model InventiveFeature {
+model InventiveFeatureJob {
     id Int @id @default(autoincrement())
     
     jobId Int
     job Job @relation(fields: [jobId],references: [id], onDelete: Cascade)
     
+    inventiveFeatures InventiveFeature[]
+    completed Boolean
+
+}
+model InventiveFeature {
+    id Int @id @default(autoincrement())
+    
+    jobId Int
+    featureJob InventiveFeatureJob @relation(fields: [jobId],references: [id], onDelete: Cascade)
+    
+    createdAt DateTime @default(now())
     feature String
     context String
-
 }
 model Feature {
     id Int @id @default(autoincrement())
@@ -55,7 +65,6 @@ model Feature {
     analysis Analysis[] 
     
     feature String
-    
 }
 model Analysis {
     id Int @id @default(autoincrement())
