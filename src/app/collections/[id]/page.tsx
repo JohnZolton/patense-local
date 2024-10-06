@@ -114,10 +114,11 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
       job.inventiveFeatureJobs.length > 0 &&
       job.inventiveFeatureJobs[0]?.inventiveFeatures
     ) {
-      const allFeatures = job.inventiveFeatureJobs.flatMap(
-        (job) => job?.inventiveFeatures || [],
+
+      setAllInventiveFeatures(
+        job.inventiveFeatureJobs.flatMap((job) => job.inventiveFeatures),
       );
-      setAllInventiveFeatures(allFeatures);
+
       if (job.inventiveFeatureJobs[0].completed) {
         setSearchLoading(false);
       }
@@ -184,7 +185,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
           job.inventiveFeatureJobs[0]?.inventiveFeatures
         ) {
           setAllInventiveFeatures(
-            job.inventiveFeatureJobs[0]?.inventiveFeatures,
+            job.inventiveFeatureJobs.flatMap((job) => job.inventiveFeatures),
           );
           if (job.inventiveFeatureJobs[0].completed) {
             setExtractionLoading(false);
@@ -197,6 +198,8 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
   }, [isExtractionLoading]);
 
   const [parent] = useAutoAnimate();
+
+  const { mutate: TestVllm } = api.job.testVLLM.useMutation();
 
   return (
     <div className="flex h-[calc(100vh-96px)] w-full flex-row justify-start">
@@ -281,7 +284,12 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
         {/* Analysis Display */}
         {
           <div className="flex h-5/6 flex-col items-center">
-            <div className="text-2xl font-bold">{feature?.feature}</div>
+            {display === DisplayOptions.inventiveFeatures && (
+              <div className="text-2xl font-bold">All Inventive Features</div>
+            )}
+            {display === DisplayOptions.features && (
+              <div className="text-2xl font-bold">{feature?.feature}</div>
+            )}
             <ScrollArea className="w-full rounded-md p-4">
               {display === DisplayOptions.inventiveFeatures && (
                 <div ref={parent}>
@@ -351,13 +359,15 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                   ))}
                 </div>
               )}
+
               {(isSearchLoading || isExtractionLoading) && <LoadingSpinner />}
+
             </ScrollArea>
           </div>
         }
         <div className="flex h-1/6 w-full flex-col items-center justify-end">
           {/* Reference toggle */}
-          <ScrollArea>
+          <ScrollArea>      setAllInventiveFeatures(job.inventiveFeatureJobs.flatMap(job=>job.inventiveFeatures));
             <div className="grid w-full grid-cols-2">
               {job?.references.map((ref, index) => (
                 <div

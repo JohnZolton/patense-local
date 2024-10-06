@@ -20,17 +20,16 @@ export default function Dashboard() {
           </div>
         )}
 
-        {allJobs &&
-          allJobs.map((job, index) => (
-            <div key={index}>
-              <Link
-                className={buttonVariants({ variant: "ghost" })}
-                href={`/collections/${job.id}`}
-              >
-                Job {job.id} - {job.createdAt.toLocaleDateString()}
-              </Link>
-            </div>
-          ))}
+        {allJobs?.map((job, index) => (
+          <div key={index}>
+            <Link
+              className={buttonVariants({ variant: "ghost" })}
+              href={`/collections/${job.id}`}
+            >
+              Job {job.id} - {job.createdAt.toLocaleDateString()}
+            </Link>
+          </div>
+        ))}
       </div>
     </main>
   );
