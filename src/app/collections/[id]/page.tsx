@@ -118,7 +118,9 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
       job.inventiveFeatureJobs.length > 0 &&
       job.inventiveFeatureJobs[0]?.inventiveFeatures
     ) {
-      setAllInventiveFeatures(job.inventiveFeatureJobs[0]?.inventiveFeatures);
+      setAllInventiveFeatures(
+        job.inventiveFeatureJobs.flatMap((job) => job.inventiveFeatures),
+      );
       if (job.inventiveFeatureJobs[0].completed) {
         setIsLoading(false);
       }
@@ -165,7 +167,7 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
           job.inventiveFeatureJobs[0]?.inventiveFeatures
         ) {
           setAllInventiveFeatures(
-            job.inventiveFeatureJobs[0]?.inventiveFeatures,
+            job.inventiveFeatureJobs.flatMap((job) => job.inventiveFeatures),
           );
           if (job.inventiveFeatureJobs[0].completed) {
             setIsLoading(false);
@@ -178,6 +180,8 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
   }, [params.id, job, handleExtractFeatures]);
 
   const [parent, enableAnimations] = useAutoAnimate();
+
+  const { mutate: TestVllm } = api.job.testVLLM.useMutation();
 
   return (
     <div className="flex h-[calc(100vh-96px)] w-full flex-row justify-start">
@@ -262,7 +266,12 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
         {/* Analysis Display */}
         {
           <div className="flex h-5/6 flex-col items-center">
-            <div className="text-2xl font-bold">{feature?.feature}</div>
+            {display === DisplayOptions.inventiveFeatures && (
+              <div className="text-2xl font-bold">All Inventive Features</div>
+            )}
+            {display === DisplayOptions.features && (
+              <div className="text-2xl font-bold">{feature?.feature}</div>
+            )}
             <ScrollArea className="w-full rounded-md p-4">
               {display === DisplayOptions.inventiveFeatures && (
                 <div ref={parent}>
@@ -291,48 +300,51 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
                   ))}
                 </div>
               )}
-              {display === DisplayOptions.features &&
-                feature?.analysis.map((item, index) => (
-                  <div
-                    key={`analysis-display-${index}`}
-                    className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
-                  >
-                    <div className="flex flex-col items-start justify-start gap-y-2">
-                      <div>{item.quote}</div>
-                      <div className="text-xs">
-                        {item.refTitle} - page {item.refPage}
+              {display === DisplayOptions.features && (
+                <div ref={parent}>
+                  {feature?.analysis.map((item, index) => (
+                    <div
+                      key={`analysis-display-${index}`}
+                      className="my-2 flex flex-row items-center justify-between rounded-md border border-border bg-accent p-2 shadow-sm"
+                    >
+                      <div className="flex flex-col items-start justify-start gap-y-2">
+                        <div>{item.quote}</div>
+                        <div className="text-xs">
+                          {item.refTitle} - page {item.refPage}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end">
+                        <Dialog>
+                          <DialogTrigger>
+                            <HoverCard>
+                              <HoverCardTrigger>
+                                <FileText />
+                              </HoverCardTrigger>
+                              <HoverCardContent>Show Context</HoverCardContent>
+                            </HoverCard>
+                          </DialogTrigger>
+                          <DialogContent className="max-h-[425px]">
+                            <DialogHeader>
+                              <DialogTitle>
+                                {item.refTitle} - page {item.refPage}
+                              </DialogTitle>
+                              <DialogDescription>
+                                <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
+                                  {item.refContent}
+                                </ScrollArea>
+                              </DialogDescription>
+                            </DialogHeader>
+                          </DialogContent>
+                        </Dialog>
                       </div>
                     </div>
-                    <div className="flex items-center justify-end">
-                      <Dialog>
-                        <DialogTrigger>
-                          <HoverCard>
-                            <HoverCardTrigger>
-                              <FileText />
-                            </HoverCardTrigger>
-                            <HoverCardContent>Show Context</HoverCardContent>
-                          </HoverCard>
-                        </DialogTrigger>
-                        <DialogContent className="max-h-[425px]">
-                          <DialogHeader>
-                            <DialogTitle>
-                              {item.refTitle} - page {item.refPage}
-                            </DialogTitle>
-                            <DialogDescription>
-                              <ScrollArea className="mt-2 h-full max-h-[300px] px-4">
-                                {item.refContent}
-                              </ScrollArea>
-                            </DialogDescription>
-                          </DialogHeader>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+              {isLoading && <LoadingSpinner />}
             </ScrollArea>
           </div>
         }
-        {isLoading && <LoadingSpinner />}
         <div className="flex h-1/6 w-full flex-col items-center justify-end">
           {/* Reference toggle */}
           <ScrollArea>

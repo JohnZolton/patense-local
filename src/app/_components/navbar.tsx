@@ -43,7 +43,11 @@ export function NavBar() {
         </Link>
       </div>
       <div className="flex flex-1 items-center justify-end space-x-4">
-        <Link href={"https://github.com/JohnZolton/snorkle"}>
+        <Link
+          target="_blank"
+          rel="noopener noreferrer"
+          href={"https://github.com/JohnZolton/patense-local"}
+        >
           <svg
             role="img"
             viewBox="0 0 24 24"

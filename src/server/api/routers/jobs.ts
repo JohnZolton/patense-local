@@ -1,4 +1,5 @@
 import { log } from "console";
+import { APIPromise } from "openai/core.mjs";
 import { z } from "zod";
 import EventEmitter from "events";
 import { observable } from "@trpc/server/observable";
@@ -154,37 +155,6 @@ export const jobRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       console.log(input.feature);
-      const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
-      async function getCompletion(message: string) {
-        const response = await fetch(webUiEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            messages: [
-              {
-                role: "user",
-                content: message,
-              },
-            ],
-          }),
-        });
-        interface ApiResponse {
-          choices: Array<{
-            message: {
-              content: string;
-            };
-          }>;
-        }
-        const content = (await response.json()) as ApiResponse;
-        console.log(content);
-        if (content && content.choices.length > 0) {
-          return content.choices[0]!.message.content;
-        }
-        return "zzz";
-      }
-
       const feature = await ctx.db.feature.create({
         data: {
           feature: input.feature,
@@ -192,44 +162,89 @@ export const jobRouter = createTRPCRouter({
         },
       });
 
-      const results = [];
+      console.time("total time");
+      const requests: {
+        request: APIPromise<OpenAI.Chat.Completions.ChatCompletion>;
+        page: {
+          id: number;
+          refId: number;
+          pageNum: number;
+          content: string;
+        };
+      }[] = [];
       for (const ref of input.references) {
         for (const page of ref.pages) {
-          const message = `You are a document analyst. Analyze whether the following text is relevant to a given user query. Be conservative, if something is borderline, answer yes. you are flagging text for manual review.
+          const systemPrompt = `You are a document analyst. Analyze whether the following text is relevant to a given user query. Be conservative, if something is borderline, answer yes. you are flagging text for manual review.
             INSTRUCTIONS: return an answer, yes or no, in <answer></answer> tags.
-            If the answer is yes, also include a short quote in <quote></quote> tags
-            -------------------
+            If the answer is yes, also include a short quote in <quote></quote> tags`;
+
+          const userPrompt = `
+          -------------------------------------
           TEXT: ${page.content}
           -------------------------------------
           QUERY: ${input.feature}
           -------------------------------------
           Is the above text relevant to the query? 
           `;
-          const pageAnalysis = await getCompletion(message);
-          let answer = "";
-          const answerRegex = /<answer>(.*?)<\/answer>/s;
-          const answerMatch = answerRegex.exec(pageAnalysis);
-          answer = answerMatch?.[1]?.trim() ?? "";
-          let quote = "";
-          const quoteRegex = /<quote>(.*?)<\/quote>/s;
-          const quoteMatch = quoteRegex.exec(pageAnalysis);
-          quote = quoteMatch?.[1]?.trim() ?? "";
 
-          if (answer.toLowerCase() === "yes") {
-            const loggedAnalysis = await ctx.db.analysis.create({
-              data: {
-                featureId: feature.id,
-                conclusion: answer,
-                quote: quote,
-                refPage: page.pageNum,
-                refContent: page.content,
-                refId: ref.id,
-                refTitle: ref.title,
+          const request = vLLMClient.chat.completions.create({
+            model: "NousResearch/Meta-Llama-3.1-8B-Instruct",
+
+            messages: [
+              { role: "system", content: systemPrompt },
+              {
+                role: "user",
+                content: userPrompt,
               },
-            });
-            results.push(loggedAnalysis);
-          }
+            ],
+          });
+
+          requests.push({ request, page });
         }
+        const responses = await Promise.all(
+          requests.map((item) => item.request),
+        );
+
+        await Promise.all(
+          responses.map(async (response, index) => {
+            const page = requests[index]?.page;
+            const pageAnalysis =
+              response.choices[0]?.message.content ?? "error";
+            let answer = "";
+            const answerRegex = /<answer>(.*?)<\/answer>/s;
+            const answerMatch = answerRegex.exec(pageAnalysis);
+            answer = answerMatch?.[1]?.trim() ?? "";
+            let quote = "";
+            const quoteRegex = /<quote>(.*?)<\/quote>/s;
+            const quoteMatch = quoteRegex.exec(pageAnalysis);
+            quote = quoteMatch?.[1]?.trim() ?? "";
+
+            if (answer.toLowerCase() === "yes") {
+              await ctx.db.analysis.create({
+                data: {
+                  featureId: feature.id,
+                  conclusion: answer,
+                  quote: quote,
+                  refPage: page?.pageNum ?? 0,
+                  refContent: page?.content ?? "err",
+                  refId: ref.id,
+                  refTitle: ref.title,
+                },
+              });
+            }
+            return 1;
+          }),
+        );
+        console.log(`analyzed ${responses.length} pages in:`);
+        console.timeEnd("total time");
+        await ctx.db.feature.update({
+          where: {
+            id: feature.id,
+          },
+          data: {
+            completed: true,
+          },
+        });
         return ctx.db.job.findFirst({
           where: { id: parseInt(input.jobId, 10) },
           include: {
@@ -286,6 +301,38 @@ export const jobRouter = createTRPCRouter({
         },
       });
     }),
+
+  testVLLM: publicProcedure.mutation(async ({ ctx }) => {
+    console.time("total time");
+    const requests = [];
+    for (let i = 0; i < 100; i++) {
+      const request = vLLMClient.chat.completions.create({
+        model: "NousResearch/Meta-Llama-3.1-8B-Instruct",
+
+        messages: [
+          { role: "system", content: "You are a helpful assistant." },
+          {
+            role: "user",
+            content: "Write a haiku about recursion in programming.",
+          },
+        ],
+      });
+
+      requests.push(request);
+    }
+    const responses = await Promise.all(requests);
+    responses.forEach((response, index) => {
+      console.log(`${index}:${response.choices[0]?.message.content}`);
+    });
+    console.timeEnd("total time");
+  }),
+});
+
+import OpenAI from "openai";
+
+const vLLMClient = new OpenAI({
+  apiKey: "fake",
+  baseURL: "http://0.0.0.0:8000/v1",
 });
 
 interface Page {
@@ -299,37 +346,6 @@ async function extractFeatures(
   prisma: PrismaClient,
   references: (Reference & { pages: Page[] })[],
 ) {
-  const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
-  async function getCompletion(message: string) {
-    const response = await fetch(webUiEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: "user",
-            content: message,
-          },
-        ],
-      }),
-    });
-    interface ApiResponse {
-      choices: Array<{
-        message: {
-          content: string;
-        };
-      }>;
-    }
-    const content = (await response.json()) as ApiResponse;
-    console.log(content);
-    if (content && content.choices.length > 0) {
-      return content.choices[0]!.message.content;
-    }
-    return "zzz";
-  }
-
   interface Page {
     id: number;
     refId: number;
@@ -337,46 +353,79 @@ async function extractFeatures(
     content: string;
   }
   function splitIntoParagraphs(page: Page) {
-    return page.content.split(/\n\s*\n/).filter((para) => para.trim() !== "");
+    return page.content.split(/\n/).filter((para) => para.trim() !== "");
   }
+  const requests: {
+    request: APIPromise<OpenAI.Chat.Completions.ChatCompletion>;
+    page: {
+      id: number;
+      refId: number;
+      pageNum: number;
+      content: string;
+    };
+  }[] = [];
+  console.time("extraction-time");
 
   for (const ref of references) {
     for (const page of ref.pages) {
       const paragraphs = splitIntoParagraphs(page);
       for (const paragraph of paragraphs) {
-        console.log(paragraph);
-        const message = `You are an expert patent analyst. 
-            INSTRUCTIONS: identify every inventive feature in the disclosure, return each feature in <feature></feature> tags.
-            ----------------------------------
-          DISCLOSURE: ${paragraph}
-          -------------------------------------
-            extract every inventive feature from the above disclosure. return features in fragments suitable for dependent claims.
-          `;
-        const pageAnalysis = await getCompletion(message);
-        const featureRegex = /<feature>(.*?)<\/feature>/gs;
-        const features = pageAnalysis.match(featureRegex);
-        console.log(features);
+        const systemPrompt = `You are an expert patent analyst. 
+            INSTRUCTIONS: identify every inventive feature in the disclosure, return each feature in <feature></feature> tags.`;
 
-        if (features) {
-          for (const feature of features) {
-            const cleanFeature = feature.replace(/<\/?feature>/g, "").trim();
-            console.log(cleanFeature);
-            await prisma.inventiveFeature.create({
-              data: {
-                jobId: jobId,
-                feature: cleanFeature,
-                context: page.content,
-              },
-            });
-          }
-        }
+        const userPrompt = `
+          -------------------------------------
+          TEXT: ${paragraph}
+          -------------------------------------
+          extract every inventive feature from the above disclosure. return features in fragments suitable for dependent claims.
+          `;
+
+        const request = vLLMClient.chat.completions.create({
+          model: "NousResearch/Meta-Llama-3.1-8B-Instruct",
+
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: userPrompt,
+            },
+          ],
+        });
+        requests.push({ request, page });
       }
     }
-    await prisma.inventiveFeatureJob.update({
-      where: { id: jobId },
-      data: {
-        completed: true,
-      },
-    });
   }
+  const responses = await Promise.all(requests.map((item) => item.request));
+  await Promise.all(
+    responses.map(async (response, index) => {
+      const page = requests[index]?.page;
+      const pageAnalysis = response.choices[0]?.message.content ?? "error";
+      const featureRegex = /<feature>(.*?)<\/feature>/gs;
+      const features = pageAnalysis.match(featureRegex);
+
+      if (features) {
+        for (const feature of features) {
+          const cleanFeature = feature.replace(/<\/?feature>/g, "").trim();
+          await prisma.inventiveFeature.create({
+            data: {
+              jobId: jobId,
+              feature: cleanFeature,
+              context: page?.content ?? "error",
+            },
+          });
+        }
+      }
+    }),
+  );
+  await prisma.inventiveFeatureJob.update({
+    where: { id: jobId },
+    data: {
+      completed: true,
+    },
+  });
+  const totalPages = references
+    .map((ref) => ref.pages.length)
+    .reduce((acc, pages) => acc + pages, 0);
+  console.log("pages analyzed: ", totalPages);
+  console.timeEnd("extraction-time");
 }
