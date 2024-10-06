@@ -5,10 +5,14 @@ A 100% local, private document search tool. It enables you to run deep, private 
 It basically breaks your references up into pages, passes each page to an LLM with the query, and asks if the content is relevant to the query. If it's relevant, it displays a short quote with a link to the full page.
 
 ## Features
-- **Deep document search** - get an overview of the references fast with AI
-- **Inventive feature extraction** - get all disclosed features for possible claims
+- **Deep document search** - find relevant portions of references fast with AI
 
-![Demo](./local_demo.gif)
+![Deep Search Demo](./search.gif)
+
+- **Inventive feature extraction** - get all disclosed features for possible claims or amendments
+
+
+![Extraction Demo](./extract.gif)
 
 
 ## Keys
