@@ -23,7 +23,7 @@ It basically breaks your references up into pages, passes each page to an LLM wi
 
 ## Requirements
 
-- [text-gen-webui](https://github.com/oobabooga/text-generation-webui) (installation is outside the scope of this guide).
+- [vLLM](https://docs.vllm.ai/en/latest/index.html) (installation is outside the scope of this guide).
 - **Node.js** and **npm** (These are necessary to run the application. If you're unfamiliar with installing them, it might be easier to use [Patense.ai](https://patense.ai)).
 
 ## Installation
@@ -48,23 +48,15 @@ It basically breaks your references up into pages, passes each page to an LLM wi
 
    in your text-gen-webui folder (or other backend) run:
    ```bash
-   Linux
-   ./start_linux.sh --listen --api
-   
-   Windows
-   ./start_windows.bat --listen --api
+   vllm serve NousResearch/Meta-Llama-3.1-8B-Instruct --max-model-len 8000 --tensor-parallel-size 2 #Set to number of GPUs you're using
 
-   Mac
-   ./start_macos.sh --listen --api
-
-  In `text-gen-webui`, select and load your model (8B tier is quite fast, at about 0.5-1 second per page on a 3090)
 
 4. Initialize the database
-   in the /snorkle folder, run:
+   in the /patense-local folder, run:
    ```bash
    npm run db:push
 5. Run the Application
-   in the /snorkle folder, run:
+   in the /patense-local folder, run:
    ```bash
    npm run dev
 6. Naviage to http://localhost:3000
