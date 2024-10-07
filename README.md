@@ -1,6 +1,6 @@
 # Patense.local
 
-A 100% local, private document search tool. It enables you to run deep, private searches across hundreds of pages per minute to get relevant context for your queries. Patense.local can run on any backend LLM server, using [text-gen-webui](https://github.com/oobabooga/text-generation-webui) by default.
+A 100% local, private document search tool. It enables you to run deep, private searches across hundreds of pages per minute to get relevant context for your queries. Patense.local uses [vLLM](https://docs.vllm.ai/en/latest/index.html) by default but can run on any backend LLM server using the OpenAI API, .
 
 It basically breaks your references up into pages, passes each page to an LLM with the query, and asks if the content is relevant to the query. If it's relevant, it displays a short quote with a link to the full page.
 
