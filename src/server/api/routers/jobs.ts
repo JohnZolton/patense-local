@@ -383,24 +383,19 @@ export const jobRouter = createTRPCRouter({
         });
         saveClaimJsonToFile(claimJson);
         */
-        const claimJson = loadClaimJsonFromFile();
+        const claimItems = loadClaimJsonFromFile();
         //const features = await extractFeaturesJson(page.content);
 
         //search refs for features
         //make comparison promises, probs some early returning
-        if (!claimJson) {
+        if (!claimItems) {
           return;
         }
-        const claimItems: ClaimItem[] = claimJson;
-        console.log(claimItems);
-
         const stats = {
           totalProcessed: 0,
           earlyReturns: 0,
           apiCalls: 0,
         };
-        const BATCH_SIZE_LIMIT = 30;
-        const RATE_LIMIT_DELAY = 3000;
         const claimPromises: Array<
           () => Promise<
             | {
@@ -409,66 +404,22 @@ export const jobRouter = createTRPCRouter({
             | undefined
           >
         > = [];
-        let CURRENT_CALLS = 0;
+        const processor = new ContinuousBatchProcessor();
         for (const reference of input.references) {
           for (const page of reference.pages) {
             for (const item of claimItems) {
               for (const element of item.elements) {
                 if (!element.disclosed) {
                   // Push a function that returns the promise, instead of directly executing it
-                  claimPromises.push(() => {
-                    return processElement(item, element, page, stats);
-                  });
+                  claimPromises.push(() =>
+                    processElement(element, page, stats),
+                  );
                 }
               }
             }
           }
         }
-        console.log(claimPromises);
-        async function processQueue() {
-          const activePromises = [];
-
-          while (claimPromises.length > 0 || activePromises.length > 0) {
-            console.log("claim promises: ", claimPromises.length);
-            console.log("active promises: ", activePromises.length);
-            // Process new tasks if under batch limit
-            while (
-              CURRENT_CALLS < BATCH_SIZE_LIMIT &&
-              claimPromises.length > 0
-            ) {
-              const task = claimPromises.shift();
-              if (task) {
-                CURRENT_CALLS++;
-                const promise = task().finally(() => {
-                  CURRENT_CALLS--;
-                });
-                activePromises.push(promise);
-              }
-            }
-
-            // Wait for at least one promise to complete
-            if (activePromises.length > 0) {
-              try {
-                await Promise.race(activePromises);
-                const settled = await Promise.allSettled(activePromises);
-                activePromises.length = 0;
-              } catch (error) {
-                console.error("Promise failed:", error);
-              }
-            }
-
-            if (activePromises.length === 0 && claimPromises.length === 0) {
-              break;
-            }
-
-            // Rate limiting delay
-            await new Promise((resolve) =>
-              setTimeout(resolve, RATE_LIMIT_DELAY),
-            );
-          }
-        }
-        await processQueue();
-        console.log("queue completed");
+        await processor.process(claimPromises);
         claimItems.forEach((item) =>
           item.elements.forEach((element) => console.log(element)),
         );
@@ -477,6 +428,52 @@ export const jobRouter = createTRPCRouter({
       }
     }),
 });
+
+interface ProcessResult {
+  success: boolean;
+}
+const CONCURRENCY_LIMIT = 100;
+class ContinuousBatchProcessor {
+  private activePromises = new Set<Promise<ProcessResult | undefined>>();
+  private pendingTasks: Array<() => Promise<ProcessResult | undefined>> = [];
+  private currentCalls = 0;
+
+  constructor(private maxConcurrent: number = CONCURRENCY_LIMIT) {}
+
+  async process(tasks: Array<() => Promise<ProcessResult | undefined>>) {
+    this.pendingTasks = [...tasks];
+
+    while (this.pendingTasks.length > 0 || this.activePromises.size > 0) {
+      // Start new tasks if under concurrency limit
+      while (
+        this.currentCalls < this.maxConcurrent &&
+        this.pendingTasks.length > 0
+      ) {
+        const task = this.pendingTasks.shift();
+        if (task) {
+          this.currentCalls++;
+
+          const promise = task()
+            .catch((error) => {
+              console.error("Task failed:", error);
+              return undefined;
+            })
+            .finally(() => {
+              this.currentCalls--;
+              this.activePromises.delete(promise);
+            });
+
+          this.activePromises.add(promise);
+        }
+      }
+
+      // If we have active promises, wait for at least one to complete
+      if (this.activePromises.size > 0) {
+        await Promise.race(Array.from(this.activePromises));
+      }
+    }
+  }
+}
 
 interface ClaimItem {
   claim: string;
@@ -497,38 +494,65 @@ interface DbPage {
   pageNum: number;
   content: string;
 }
-async function processElement(
-  item: ClaimItem,
-  element: Element,
-  page: DbPage,
-  stats: Stats,
-) {
+async function processElement(element: Element, page: DbPage, stats: Stats) {
   try {
-    stats.apiCalls++;
     if (element.disclosed) {
       console.log("DISCLOSED, RETURNING EARLY");
       return;
     }
+    stats.apiCalls++;
     const responseFormat = z.object({
       disclosed: z.boolean(),
-      quote: z.string(),
     });
 
     const answerFormatSchema = zodToJsonSchema(responseFormat, "AnswerFormat");
-    const sysPrompt = `You are an amazing, sentient patent analysis AI. You determine whether an inventive element is disclosed by a reference, answer true/false, and give a quote.`;
+    const sysPrompt = `You are an amazing, sentient patent analysis AI. You determine whether an inventive element is disclosed by a reference and answer true or false.`;
     const userPrompt = `is this element: ${element.element}\n\ndislcosed by this page: ${page.content}`;
-    const llmResponse = await createLlmCallForceJson(
-      answerFormatSchema,
-      sysPrompt,
-      userPrompt,
-    );
-    const structuredData = llmResponse.choices[0]?.message?.content ?? "error";
+    const llmResponse = JSON.parse(
+      await createLlmCallForceJson(answerFormatSchema, sysPrompt, userPrompt),
+    ) as OpenAI.Chat.Completions.ChatCompletion;
+
+    const message = llmResponse.choices[0]?.message?.content ?? "error";
+    const structuredData = responseFormat.parse(JSON.parse(message));
     if (structuredData.disclosed) {
       element.disclosed = true;
-      element.quote = structuredData.quote;
+      element.cite = page.content;
     }
     stats.totalProcessed++;
     console.log("response: ", structuredData);
+
+    //CONFIRM WITH SECOND LLM CALL
+    if (structuredData.disclosed) {
+      stats.apiCalls++;
+      const responseFormatConfirm = z.object({
+        disclosed: z.boolean(),
+        quote: z.string(),
+      });
+      const confirmFormatSchema = zodToJsonSchema(
+        responseFormatConfirm,
+        "AnswerFormat",
+      );
+      const sysPromptConfirm = `You are an amazing, sentient patent analysis AI. You determine whether an inventive element is disclosed by a reference and answer true or false, and include a short quote from the text to support your conclusion.`;
+      const userPromptConfirm = `is this element: ${element.element}\n\ndislcosed by this page: ${page.content}`;
+      const llmResponseConfirm = JSON.parse(
+        await createLlmCallForceJson(
+          confirmFormatSchema,
+          sysPromptConfirm,
+          userPromptConfirm,
+        ),
+      ) as OpenAI.Chat.Completions.ChatCompletion;
+      const messageConfirm =
+        llmResponseConfirm.choices[0]?.message?.content ?? "error";
+      const structuredDataConfirm = responseFormatConfirm.parse(
+        JSON.parse(messageConfirm),
+      );
+      element.disclosed = structuredDataConfirm.disclosed;
+      if (structuredDataConfirm.disclosed) {
+        element.quote = structuredDataConfirm.quote;
+      }
+      stats.totalProcessed++;
+    }
+
     return { success: true };
   } catch (error) {
     console.error(`Error processing element: ${element.element}`, error);
@@ -538,15 +562,23 @@ async function processElement(
 async function saveClaimJsonToFile(claimJson: ClaimItem[]) {
   const filePath = path.join(process.cwd(), "claimData.json");
   fs.writeFileSync(filePath, JSON.stringify(claimJson, null, 2), "utf-8");
-  console.log(`claimJson written to ${path}`);
+  console.log(`claimJson written to ${filePath}`);
 }
 
-interface JsonLoadsData {}
 function loadClaimJsonFromFile() {
   const filePath = path.join(process.cwd(), "claimData.json");
   if (fs.existsSync(filePath)) {
     const fileContent = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(fileContent) as ClaimItem[];
+    const temp: { claim: string; elements: string[] }[] = JSON.parse(
+      fileContent,
+    ) as { claim: string; elements: string[] }[];
+    const result: ClaimItem[] = temp.map((item) => ({
+      claim: item.claim,
+      elements: item.elements.map((element) => ({
+        element: element,
+      })),
+    }));
+    return result;
   } else {
     console.error("file not found");
     return null;
@@ -556,15 +588,11 @@ function loadClaimJsonFromFile() {
 async function createLlmCallForceJson(
   formatSchema: JsonSchema7Type & {
     $schema?: string | undefined;
-    definitions?:
-      | {
-          [key: string]: JsonSchema7Type;
-        }
-      | undefined;
+    definitions?: Record<string, JsonSchema7Type>;
   },
   sysPrompt: string,
   userPrompt: string,
-) {
+): Promise<string> {
   const request = await fetch("http://0.0.0.0:8000/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -578,8 +606,15 @@ async function createLlmCallForceJson(
       ],
       guided_json: formatSchema,
     }),
-  }).then((response) => response.json());
-  return request;
+  });
+  if (!request.ok) {
+    const errorText = await request.text();
+    throw new Error(
+      `HTTP error! status: ${request.status}, body: ${errorText}`,
+    );
+  }
+
+  return request.text();
 }
 
 async function parseClaimsToJson(claims: {
@@ -603,7 +638,7 @@ async function extractClaimElementsJson(claim: string) {
 
   const answerFormatSchema = zodToJsonSchema(featureResponse, "AnswerFormat");
   const requestsJson: {
-    request: Promise<any>; // Adjust the type if you know the exact response type.
+    request: Promise<string>; // Adjust the type if you know the exact response type.
     page: {
       pageNum: number;
       content: string;
@@ -634,12 +669,15 @@ async function extractClaimElementsJson(claim: string) {
   );
   const result = responsesJson.map((response, index) => {
     const page = requestsJson[index]?.page;
-    const structuredData = response.choices[0]?.message?.content ?? "error";
+    const llmResponse = JSON.parse(
+      response,
+    ) as OpenAI.Chat.Completions.ChatCompletion;
+    const structuredData = llmResponse.choices[0]?.message?.content ?? "error";
 
-    return JSON.parse(structuredData);
+    return featureResponse.parse(JSON.parse(structuredData));
   });
   console.log(result);
-  return { claim, elements: result[0].elements };
+  return { claim, elements: result[0]?.elements };
 }
 async function extractFeaturesJson(pageContent: string) {
   const paragraphs = splitIntoParagraphs(pageContent);
@@ -653,7 +691,7 @@ async function extractFeaturesJson(pageContent: string) {
 
   const answerFormatSchema = zodToJsonSchema(FeaturesResponse, "AnswerFormat");
   const requestsJson: {
-    request: Promise<any>; // Adjust the type if you know the exact response type.
+    request: Promise<string>; // Adjust the type if you know the exact response type.
     page: {
       pageNum: number;
       content: string;
@@ -686,14 +724,18 @@ async function extractFeaturesJson(pageContent: string) {
   );
   const result = responsesJson.map((response, index) => {
     const page = requestsJson[index]?.page;
-    const structuredData = response.choices[0]?.message?.content ?? "error";
+    const llmResponse = JSON.parse(
+      response,
+    ) as OpenAI.Chat.Completions.ChatCompletion;
+    const structuredData = llmResponse.choices[0]?.message?.content ?? "error";
 
-    return JSON.parse(structuredData);
+    return FeaturesResponse.parse(JSON.parse(structuredData));
   });
   return result;
 }
 
 import OpenAI from "openai";
+import { Response } from "openai/_shims/auto/types";
 
 const vLLMClient = new OpenAI({
   apiKey: "8d1c17826b640774e7c0da1fca3c7830",
