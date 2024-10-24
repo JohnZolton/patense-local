@@ -311,55 +311,62 @@ export const jobRouter = createTRPCRouter({
       });
     }),
 
-  testVLLM: publicProcedure
+  getClaimsDummy: publicProcedure.mutation(async ({ ctx, input }) => {
+    const claimItems = loadClaimJsonFromFile();
+    return claimItems;
+  }),
+  extractClaims: publicProcedure
     .input(
       z.object({
-        spec: z
-          .object({
-            title: z.string(),
-            pages: z.array(
-              z.object({
-                pageNum: z.number(),
-                content: z.string(),
-              }),
-            ),
-          })
-          .optional(),
-        claims: z
-          .object({
-            title: z.string(),
-            pages: z.array(
-              z.object({
-                pageNum: z.number(),
-                content: z.string(),
-              }),
-            ),
-          })
-          .optional(),
-        officeAction: z
-          .object({
-            title: z.string(),
-            pages: z.array(
-              z.object({
-                pageNum: z.number(),
-                content: z.string(),
-              }),
-            ),
-          })
-          .optional(),
-        references: z
-          .array(
+        claims: z.object({
+          title: z.string(),
+          pages: z.array(
             z.object({
-              title: z.string(),
-              pages: z.array(
-                z.object({
-                  pageNum: z.number(),
-                  content: z.string(),
-                }),
-              ),
+              pageNum: z.number(),
+              content: z.string(),
             }),
-          )
-          .optional(),
+          ),
+        }),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const rawItems = await parseClaimsToJson(input.claims);
+      const claimItems: ClaimItem[] = rawItems.map((item) => ({
+        claim: item.claim,
+        elements: item.elements.map((element) => ({
+          element: element,
+        })),
+      }));
+
+      return claimItems;
+    }),
+  searchRefsForElements: publicProcedure
+    .input(
+      z.object({
+        claims: z.array(
+          z.object({
+            claim: z.string(),
+            elements: z.array(
+              z.object({
+                element: z.string(),
+                disclosed: z.boolean().optional(),
+                quote: z.string().optional(),
+                cite: z.string().optional(),
+              }),
+            ),
+          }),
+        ),
+        references: z.array(
+          z.object({
+            title: z.string(),
+            pages: z.array(
+              z.object({
+                pageNum: z.number(),
+                content: z.string(),
+              }),
+            ),
+          }),
+        ),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -425,6 +432,7 @@ export const jobRouter = createTRPCRouter({
         );
         console.log("total calls: ", stats.apiCalls);
         console.timeEnd("totaltest");
+        return claimItems;
       }
     }),
 });
@@ -560,24 +568,24 @@ async function processElement(element: Element, page: DbPage, stats: Stats) {
 }
 
 async function saveClaimJsonToFile(claimJson: ClaimItem[]) {
-  const filePath = path.join(process.cwd(), "claimData.json");
+  const filePath = path.join(process.cwd(), "claimDataFull.json");
   fs.writeFileSync(filePath, JSON.stringify(claimJson, null, 2), "utf-8");
   console.log(`claimJson written to ${filePath}`);
 }
 
 function loadClaimJsonFromFile() {
-  const filePath = path.join(process.cwd(), "claimData.json");
+  const filePath = path.join(process.cwd(), "claimDataFull.json");
   if (fs.existsSync(filePath)) {
     const fileContent = fs.readFileSync(filePath, "utf-8");
-    const temp: { claim: string; elements: string[] }[] = JSON.parse(
-      fileContent,
-    ) as { claim: string; elements: string[] }[];
+    const result: ClaimItem[] = JSON.parse(fileContent) as ClaimItem[];
+    /*
     const result: ClaimItem[] = temp.map((item) => ({
       claim: item.claim,
       elements: item.elements.map((element) => ({
         element: element,
       })),
     }));
+    */
     return result;
   } else {
     console.error("file not found");
@@ -677,7 +685,7 @@ async function extractClaimElementsJson(claim: string) {
     return featureResponse.parse(JSON.parse(structuredData));
   });
   console.log(result);
-  return { claim, elements: result[0]?.elements };
+  return { claim, elements: result[0]!.elements };
 }
 async function extractFeaturesJson(pageContent: string) {
   const paragraphs = splitIntoParagraphs(pageContent);

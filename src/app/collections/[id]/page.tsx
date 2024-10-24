@@ -181,8 +181,6 @@ export default function JobDisplay({ params }: { params: { id: string } }) {
 
   const [parent, enableAnimations] = useAutoAnimate();
 
-  const { mutate: TestVllm } = api.job.testVLLM.useMutation();
-
   return (
     <div className="flex h-[calc(100vh-96px)] w-full flex-row justify-start">
       {/* Left sidebar for feature history */}
