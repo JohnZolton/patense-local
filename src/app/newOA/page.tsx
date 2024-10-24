@@ -382,7 +382,7 @@ export default function Page() {
           >
             Search for Elements
           </Button>
-          <Button>Extract Inventive Features</Button>
+          <Button disabled={!specFile}>Extract Inventive Features</Button>
         </div>
       </div>
 
