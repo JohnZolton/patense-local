@@ -176,20 +176,8 @@ export default function Page() {
       }
     },
   });
-  /*
-  const { mutate: getDummyData } = api.job.getClaimsDummy.useMutation({
-    onSuccess: (data) => {
-      if (data) {
-        setClaimItems(data);
-      }
-    },
-  });
-  useEffect(() => {
-    if (!claimItems) {
-      getDummyData();
-    }
-  }, [claimItems, setClaimItems]);
-  */
+  const { mutate: extractSpecFeatures } =
+    api.job.extractSpecFeatures.useMutation();
   const [claimItems, setClaimItems] = useState<ClaimItem[]>();
 
   function handleExtractClaims() {
@@ -270,8 +258,15 @@ export default function Page() {
   }
 
   const [parent, enableAnimations] = useAutoAnimate();
+
+  function handleExtractFeatures() {
+    if (specFileText) {
+      extractSpecFeatures({ spec: specFileText });
+    }
+  }
+
   return (
-    <div className="flex h-[calc(100vh-120px)] w-full">
+    <div className="flex h-[calc(100vh-120px)] w-full justify-between">
       {/* Sidebar */}
       <div className="w-64 p-4">
         <div className="flex h-full flex-col items-start justify-start gap-y-4">
@@ -382,12 +377,11 @@ export default function Page() {
           >
             Search for Elements
           </Button>
-          <Button disabled={!specFile}>Extract Inventive Features</Button>
         </div>
       </div>
 
       {/* Main Content Area */}
-      <main className="max-w-5xl flex-1 p-2">
+      <main className="max-w-5xl flex-1 items-center justify-center p-2">
         <h1 className="pb-4 text-center text-3xl font-extrabold tracking-tight">
           NEW OFFICE ACTION
         </h1>
@@ -418,6 +412,7 @@ export default function Page() {
           </div>
         </ScrollArea>
       </main>
+      <div className="lg:w-64 lg:p-4"></div>
     </div>
   );
 }

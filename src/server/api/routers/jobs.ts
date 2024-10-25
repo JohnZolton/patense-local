@@ -14,6 +14,9 @@ import { extendTailwindMerge } from "tailwind-merge";
 import { zodResponseFormat } from "openai/helpers/zod";
 import fs from "fs";
 import path from "path";
+import { HNSWLib } from "@langchain/community/vectorstores/hnswlib";
+import { OpenAIEmbeddings } from "@langchain/openai";
+import type { Document } from "@langchain/core/documents";
 
 const extractionEmitter = new EventEmitter();
 const extractionUpdateSchema = z.object({
@@ -167,6 +170,7 @@ export const jobRouter = createTRPCRouter({
         data: {
           feature: input.feature,
           jobId: parseInt(input.jobId, 10),
+          completed: false,
         },
       });
 
@@ -315,6 +319,41 @@ export const jobRouter = createTRPCRouter({
     const claimItems = loadClaimJsonFromFile();
     return claimItems;
   }),
+  extractSpecFeatures: publicProcedure
+    .input(
+      z.object({
+        spec: z.object({
+          title: z.string(),
+          pages: z.array(
+            z.object({
+              pageNum: z.number(),
+              content: z.string(),
+            }),
+          ),
+        }),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      console.log(input.spec);
+      const elementPromises: Array<
+        () => Promise<
+          | {
+              success: boolean;
+            }
+          | undefined
+        >
+      > = [];
+      const processor = new ContinuousBatchProcessor();
+      const elements: { feature: string }[] = [];
+
+      for (const page of input.spec.pages) {
+        for (const paragraph of splitIntoParagraphs(page.content)) {
+          elementPromises.push(() => processFeatureSpec(paragraph, elements));
+        }
+      }
+      await processor.process(elementPromises);
+      return elements;
+    }),
   extractClaims: publicProcedure
     .input(
       z.object({
@@ -501,6 +540,33 @@ interface Stats {
 interface DbPage {
   pageNum: number;
   content: string;
+}
+async function processFeatureSpec(
+  paragraph: string,
+  elements: { feature: string }[],
+) {
+  try {
+    const responseFormat = z.array(
+      z.object({
+        feature: z.string(),
+      }),
+    );
+
+    const answerFormatSchema = zodToJsonSchema(responseFormat, "AnswerFormat");
+    const sysPrompt = `You are an amazing, sentient patent analysis AI. You extract every inventive feature present in a disclosure and return it in JSON: {feature:string}[]`;
+    const userPrompt = `identify all the features disclosed in this text: ${paragraph}`;
+    const llmResponse = JSON.parse(
+      await createLlmCallForceJson(answerFormatSchema, sysPrompt, userPrompt),
+    ) as OpenAI.Chat.Completions.ChatCompletion;
+
+    const message = llmResponse.choices[0]?.message?.content ?? "error";
+    const structuredData = responseFormat.parse(JSON.parse(message));
+    console.log(structuredData);
+    elements.push(...structuredData);
+    return { success: true };
+  } catch (error) {
+    console.error(error);
+  }
 }
 async function processElement(element: Element, page: DbPage, stats: Stats) {
   try {
@@ -744,6 +810,8 @@ async function extractFeaturesJson(pageContent: string) {
 
 import OpenAI from "openai";
 import { Response } from "openai/_shims/auto/types";
+import { ChromaClient } from "chromadb";
+import { metadata } from "~/app/layout";
 
 const vLLMClient = new OpenAI({
   apiKey: "8d1c17826b640774e7c0da1fca3c7830",
