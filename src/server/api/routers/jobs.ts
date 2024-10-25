@@ -9,14 +9,18 @@ import { z } from "zod";
 import EventEmitter from "events";
 import { observable } from "@trpc/server/observable";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
-import { InventiveFeature, PrismaClient } from "@prisma/client";
+import { Feature, InventiveFeature, PrismaClient } from "@prisma/client";
 import { extendTailwindMerge } from "tailwind-merge";
+
 import { zodResponseFormat } from "openai/helpers/zod";
 import fs from "fs";
 import path from "path";
 import { HNSWLib } from "@langchain/community/vectorstores/hnswlib";
 import { OpenAIEmbeddings } from "@langchain/openai";
 import type { Document } from "@langchain/core/documents";
+
+import { createInputMiddleware } from "@trpc/server/unstable-core-do-not-import";
+
 
 const extractionEmitter = new EventEmitter();
 const extractionUpdateSchema = z.object({
@@ -140,10 +144,26 @@ export const jobRouter = createTRPCRouter({
         include: {
           inventiveFeatures: true,
         },
-      });
+      });      setAllInventiveFeatures(job.inventiveFeatureJobs.flatMap(job=>job.inventiveFeatures));
     }),
 
-  deepSearch: publicProcedure
+  pollDeepSearch: publicProcedure
+    .input(
+      z.object({
+        featureId: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.feature.findFirst({
+        where: {
+          id: input.featureId,
+        },
+        include: {
+          analysis: true,
+        },
+      });
+    }),
+  makeDeepSearch: publicProcedure
     .input(
       z.object({
         jobId: z.string(),
@@ -165,18 +185,18 @@ export const jobRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      console.log(input.feature);
+
       const feature = await ctx.db.feature.create({
         data: {
           feature: input.feature,
-          jobId: parseInt(input.jobId, 10),
-          completed: false,
+          jobId: parseInt(input.jobId),
         },
       });
 
+
       console.time("total time");
       const requests: {
-        request: APIPromise<OpenAI.Chat.Completions.ChatCompletion>;
+        request: APIPromise<OpenAI.Chat.Completions.ChatCompletion>;does not satisfy the constraint 'PageProps'
         page: {
           id: number;
           refId: number;
@@ -272,6 +292,7 @@ export const jobRouter = createTRPCRouter({
           },
         });
       }
+
     }),
 
   createJob: publicProcedure
@@ -280,7 +301,7 @@ export const jobRouter = createTRPCRouter({
         references: z.array(
           z.object({
             title: z.string(),
-            pages: z.array(
+            pages: z.array(      setAllInventiveFeatures(job.inventiveFeatureJobs.flatMap(job=>job.inventiveFeatures));
               z.object({
                 pageNum: z.number(),
                 content: z.string(),
@@ -906,4 +927,88 @@ async function extractFeatures(
     .reduce((acc, pages) => acc + pages, 0);
   console.log("pages analyzed: ", totalPages);
   console.timeEnd("extraction-time");
+}
+
+async function runDeepSearch(
+  inputFeature: Feature,
+  jobId: number,
+  prisma: PrismaClient,
+  references: (Reference & { pages: Page[] })[],
+) {
+  const webUiEndpoint = "http://127.0.0.1:5000/v1/chat/completions";
+  async function getCompletion(message: string) {
+    const response = await fetch(webUiEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+      }),
+    });
+    interface ApiResponse {
+      choices: Array<{
+        message: {
+          content: string;
+        };
+      }>;
+    }
+    const content = (await response.json()) as ApiResponse;
+    console.log(content);
+    if (content && content.choices.length > 0) {
+      return content.choices[0]!.message.content;
+    }
+    return "zzz";
+  }
+
+  const results = [];
+  for (const ref of references) {
+    for (const page of ref.pages) {
+      const message = `You are a document analyst. Analyze whether the following text is relevant to a given user query. Be conservative, if something is borderline, answer yes. you are flagging text for manual review.
+            INSTRUCTIONS: return an answer, yes or no, in <answer></answer> tags.
+            If the answer is yes, also include a short quote in <quote></quote> tags
+            -------------------
+          TEXT: ${page.content}
+          -------------------------------------
+          QUERY: ${inputFeature.feature}
+          -------------------------------------
+          Is the above text relevant to the query? 
+          `;
+      const pageAnalysis = await getCompletion(message);
+      let answer = "";
+      const answerRegex = /<answer>(.*?)<\/answer>/s;
+      const answerMatch = answerRegex.exec(pageAnalysis);
+      answer = answerMatch?.[1]?.trim() ?? "";
+      let quote = "";
+      const quoteRegex = /<quote>(.*?)<\/quote>/s;
+      const quoteMatch = quoteRegex.exec(pageAnalysis);
+      quote = quoteMatch?.[1]?.trim() ?? "";
+
+      if (answer.toLowerCase() === "yes") {
+        const loggedAnalysis = await prisma.analysis.create({
+          data: {
+            featureId: inputFeature.id,
+            conclusion: answer,
+            quote: quote,
+            refPage: page.pageNum,
+            refContent: page.content,
+            refId: ref.id,
+            refTitle: ref.title,
+          },
+        });
+        results.push(loggedAnalysis);
+      }
+    }
+  }
+  await prisma.feature.update({
+    where: { id: inputFeature.id },
+    data: {
+      completed: true,
+    },
+  });
 }
