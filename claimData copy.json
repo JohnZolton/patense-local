@@ -1,0 +1,73 @@
+[
+  {
+    "claim": "1. A railway weed control vehicle, comprising: at least one electrode based weed control unit;at least one sensor; and\n\na processing unit; \n\nwherein the at least one electrode based weed control unit is mounted to at least one first position of the vehicle;\n\nwherein the at least one sensor is mounted to at least one second position of the vehicle, wherein with respect to a forward movement direction of the vehicle the at least one second position is in front of the at least one first position;\n\nwherein activation of the at least one weed control unit is used to control weeds along and around a railway track, wherein the railway track comprises rails and sleepers;\n\nwherein the at least one sensor is configured to acquire sensor data relating to at least one location along and around the railway track;\n\nwherein the at least one sensor is configured to provide the sensor data to the processing unit;\n\nwherein the processing unit is configured to analyze the sensor data to determine locations of rail infrastructure components in addition to the rails and sleepers;\n\nwherein, the processing unit is configured to modify activation of one or more electrode based weed control units of the at least one electrode based weed control unit comprising utilization of at least one location of the determined locations of the rail infrastructure components;\n\nwherein modification of activation of the one or more electrode based weed control units comprises a movement of the one or more electrode based weed control units away from the at least one location of the determined locations; and\n\nwherein the movement comprises a horizontal movement at the underside of the vehicle.",
+    "elements": [
+      "railway weed control vehicle",
+      "electrode based weed control unit",
+      "sensor",
+      "locations of rail infrastructure components",
+      "activation of one or more electrode based weed control units",
+      "movement of one or more electrode based weed control units",
+      "horizontal movement at the underside of the vehicle"
+    ]
+  },
+  {
+    "claim": "2. The railway weed control vehicle according to , wherein modification of activation of the one or more electrode based weed control units comprises deactivation of the one or more electrode based weed control units.",
+    "elements": [
+      "deactivation of the one or more electrode based weed control units."
+    ]
+  },
+  {
+    "claim": "3. The railway weed control vehicle according to , wherein modification of activation of the one or more electrode based weed control units comprises a determination not to activate the one or more electrode based weed control units.",
+    "elements": [
+      "comprises a determination not to activate the one or more electrode based weed control units"
+    ]
+  },
+  {
+    "claim": "4. The railway weed control vehicle according to , wherein the movement comprises a vertical movement.",
+    "elements": ["wherein the movement comprises a vertical movement"]
+  },
+  {
+    "claim": "5. The railway weed control vehicle according to , wherein each of the at least one electrode based weed control unit is movably attached to the vehicle via an associated actuator, and wherein the processing unit is configured to control an actuator to move the associated electrode based weed control unit.",
+    "elements": [
+      "each of the at least one electrode based weed control unit is movably attached to the vehicle via an associated actuator",
+      "wherein the processing unit is configured to control an actuator to move the associated electrode based weed control unit."
+    ]
+  },
+  {
+    "claim": "6. The railway weed control vehicle according to , wherein the processing unit is configured to analyze the sensor data to identify the rail infrastructure components at the determined locations, and wherein the at least one location of the determined locations comprises locations of identified rail infrastructure components that are susceptible to damage from activation of the at least one electrode based weed control unit.",
+    "elements": [
+      "the processing unit is configured to analyze the sensor data to identify the rail infrastructure components at the determined locations",
+      "wherein the at least one location of the determined locations comprises locations of identified rail infrastructure components that are susceptible to damage from activation of the at least one electrode based weed control unit"
+    ]
+  },
+  {
+    "claim": "7. The railway weed control vehicle according to , wherein the sensor data comprises image data, and wherein identification of the rail infrastructure components comprises image analysis of the image data.",
+    "elements": [
+      "wherein the sensor data comprises image data",
+      "wherein identification of the rail infrastructure components comprises image analysis of the image data"
+    ]
+  },
+  {
+    "claim": "8. The railway weed control vehicle according to , wherein the at least one sensor comprises one or more of: a camera; an IR sensor; a LIDAR sensor; a flexible contact sensor; and a radar sensor.",
+    "elements": [
+      "the at least one sensor comprises one or more of: a camera; an IR sensor; a LIDAR sensor; a flexible contact sensor; and a radar sensor."
+    ]
+  },
+  {
+    "claim": "10. The method according to , wherein step e) comprises deactivation of the one or more electrode based weed control units.",
+    "elements": [
+      "comprises deactivation of the one or more electrode based weed control units."
+    ]
+  },
+  {
+    "claim": "12. The non-transitory computer-readable storage medium of , wherein the executable instructions, when executed by the processor in connection with the step of modifying activation of the one or more electrode based weed control units, cause the processor to perform the step of deactivating the one or more electrode based weed control units.\n\n",
+    "elements": [
+      "non-transitory computer-readable storage medium",
+      "executable instructions",
+      "processor",
+      "step of modifying activation of the one or more electrode based weed control units",
+      "deactivating the one or more electrode based weed control units"
+    ]
+  }
+]

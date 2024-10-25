@@ -65,7 +65,9 @@ model Feature {
     analysis Analysis[] 
     
     feature String
+
     completed Boolean @default(false)
+
 }
 model Analysis {
     id Int @id @default(autoincrement())

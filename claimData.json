@@ -1,0 +1,22 @@
+[
+  {
+    "claim": "1. A railway weed control vehicle, comprising: at least one electrode based weed control unit;at least one sensor; and\n\na processing unit; \n\nwherein the at least one electrode based weed control unit is mounted to at least one first position of the vehicle;\n\nwherein the at least one sensor is mounted to at least one second position of the vehicle, wherein with respect to a forward movement direction of the vehicle the at least one second position is in front of the at least one first position;\n\nwherein activation of the at least one weed control unit is used to control weeds along and around a railway track, wherein the railway track comprises rails and sleepers;\n\nwherein the at least one sensor is configured to acquire sensor data relating to at least one location along and around the railway track;\n\nwherein the at least one sensor is configured to provide the sensor data to the processing unit;\n\nwherein the processing unit is configured to analyze the sensor data to determine locations of rail infrastructure components in addition to the rails and sleepers;\n\nwherein, the processing unit is configured to modify activation of one or more electrode based weed control units of the at least one electrode based weed control unit comprising utilization of at least one location of the determined locations of the rail infrastructure components;\n\nwherein modification of activation of the one or more electrode based weed control units comprises a movement of the one or more electrode based weed control units away from the at least one location of the determined locations; and\n\nwherein the movement comprises a horizontal movement at the underside of the vehicle.",
+    "elements": [
+      "railway weed control vehicle",
+      "electrode based weed control unit",
+      "sensor",
+      "processing unit",
+      "locations of rail infrastructure components",
+      "activation of one or more electrode based weed control units",
+      "movement of one or more electrode based weed control units",
+      "horizontal movement",
+      "underside of the vehicle"
+    ]
+  },
+  {
+    "claim": "2. The railway weed control vehicle according to , wherein modification of activation of the one or more electrode based weed control units comprises deactivation of the one or more electrode based weed control units.",
+    "elements": [
+      "deactivation of the one or more electrode based weed control units."
+    ]
+  }
+]
