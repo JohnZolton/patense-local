@@ -6,10 +6,12 @@ It basically breaks your references up into pages, passes each page to an LLM wi
 
 ## Features
 - **Deep document search** - find relevant portions of references fast with AI
+- **Inventive feature extraction** - get all disclosed features for possible claims or amendments
+- ***NEW*** **OA Auditor** - Upload a set of claims and references, AI parses the claims into inventive elements and searches all references
 
 ![Deep Search Demo](./search.gif)
 
-- **Inventive feature extraction** - get all disclosed features for possible claims or amendments
+
 
 
 ![Extraction Demo](./extract.gif)
