@@ -41,6 +41,9 @@ export function NavBar() {
         >
           All Collections
         </Link>
+        <Link className={buttonVariants({ variant: "link" })} href={"/auditor"}>
+          Office Action Auditor
+        </Link>
       </div>
       <div className="flex flex-1 items-center justify-end space-x-4">
         <Link

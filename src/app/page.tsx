@@ -25,6 +25,12 @@ export default async function Home() {
           >
             All Collections
           </Link>
+          <Link
+            className={buttonVariants({ variant: "outline" })}
+            href={"/auditor"}
+          >
+            Office Action Auditor
+          </Link>
         </div>
       </div>
     </div>
